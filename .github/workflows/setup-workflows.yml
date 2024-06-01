@@ -1,0 +1,181 @@
+name: Setup Workflows
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Create workflow files
+      run: |
+        mkdir -p .github/workflows
+
+        cat > .github/workflows/generate-code.yml << 'EOF'
+        name: Generate Code
+
+        on:
+          push:
+            branches:
+              - main
+
+        jobs:
+          generate:
+            runs-on: ubuntu-latest
+
+            steps:
+            - name: Checkout repository
+              uses: actions/checkout@v2
+
+            - name: Generate code
+              run: |
+                mkdir -p src
+                echo 'print("Hello from the generated code!")' > src/main.py
+
+            - name: Commit and push generated code
+              run: |
+                git config --global user.name "github-actions"
+                git config --global user.email "github-actions@github.com"
+                git add -A
+                git commit -m "Add generated code"
+                git push
+        EOF
+
+        cat > .github/workflows/build.yml << 'EOF'
+        name: Build
+
+        on:
+          push:
+            branches:
+              - main
+
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+
+            steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up Python
+              uses: actions/setup-python@v2
+              with:
+                python-version: '3.x'
+
+            - name: Install dependencies
+              run: |
+                python -m pip install --upgrade pip
+                echo "pytest" > requirements.txt
+                pip install -r requirements.txt
+
+            - name: Build code
+              run: |
+                echo "Building the generated code"
+        EOF
+
+        cat > .github/workflows/test.yml << 'EOF'
+        name: Test
+
+        on:
+          push:
+            branches:
+              - main
+
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+
+            steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up Python
+              uses: actions/setup-python@v2
+              with:
+                python-version: '3.x'
+
+            - name: Install dependencies
+              run: |
+                python -m pip install --upgrade pip
+                pip install -r requirements.txt
+
+            - name: Run tests
+              run: |
+                pytest
+        EOF
+
+        cat > .github/workflows/containerize.yml << 'EOF'
+        name: Containerize
+
+        on:
+          push:
+            branches:
+              - main
+
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+
+            steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v2
+
+            - name: Log in to GitHub Container Registry
+              uses: docker/login-action@v2
+              with:
+                registry: ghcr.io
+                username: ${{ github.repository_owner }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and push Docker image
+              uses: docker/build-push-action@v4
+              with:
+                context: .
+                push: true
+                tags: ghcr.io/${{ github.repository_owner }}/generated-app:latest
+        EOF
+
+        cat > .github/workflows/deploy.yml << 'EOF'
+        name: Deploy
+
+        on:
+          push:
+            branches:
+              - main
+
+        jobs:
+          deploy:
+            runs-on: ubuntu-latest
+
+            steps:
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Set up K8s
+              run: |
+                curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+                chmod +x ./kubectl
+                sudo mv ./kubectl /usr/local/bin/kubectl
+
+            - name: Deploy to Kubernetes
+              run: |
+                echo "kubectl apply -f k8s-deployment.yaml"
+        EOF
+
+    - name: Commit and push workflow files
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@github.com"
+        git add .github/workflows/*.yml
+        git commit -m "Add initial workflows"
+        git push
